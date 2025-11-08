@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>心声弹幕 - 实时许愿池</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: linear-gradient(to bottom, #1a2980, #26d0ce);
+            color: white;
+            font-family: 'Microsoft YaHei', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #danmu-container {
+            width: 100%;
+            height: 85vh;
+            position: relative;
+            border-bottom: 1px dashed rgba(255,255,255,0.3);
+            overflow: hidden;
+        }
+
+        .danmu {
+            position: absolute;
+            white-space: nowrap;
+            font-size: 18px;
+            text-shadow: 1px 1px 2px black;
+            animation: moveLeft 15s linear forwards;
+        }
+
+        .trouble { color: #48dbfb; }
+        .wish { color: #feca57; }
+
+        @keyframes moveLeft {
+            from { transform: translateX(100vw); }
+            to { transform: translateX(-100%); }
+        }
+
+        .input-area {
+            padding: 15px;
+            text-align: center;
+            height: 15vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #danmu-type {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 8px;
+            background: white;
+        }
+
+        #danmu-input {
+            padding: 8px 12px;
+            width: 300px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        #send-btn {
+            padding: 8px 20px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        #send-btn:hover {
+            background: #ff5252;
+        }
+
+        .status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 12px;
+        }
+
+        .loading {
+            text-align: center;
+            padding-top: 50px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">初始化中...</div>
+
+    <div id="danmu-container">
+        <div class="loading" id="loading">现在发送属于你的弹幕吧</div>
+    </div>
+
+    <div class="input-area">
+        <select id="danmu-type">
+            <option value="trouble">😔 烦恼</option>
+            <option value="wish">✨ 愿望</option>
+        </select>
+        <input type="text" id="danmu-input" placeholder="输入你想说的话...">
+        <button id="send-btn">发送</button>
+    </div>
+
+    <!-- 使用兼容性更好的版本 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@1.8.0/dist/umd/supabase.min.js"></script>
+    <script>
+        // 配置信息 - 替换为你的信息！
+        const SUPABASE_URL = 'https://qygwuooeuemjgyaceckv.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5Z3d1b29ldWVtamd5YWNlY2t2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI1ODQ1NzksImV4cCI6MjA3ODE2MDU3OX0.c0_Cc1mn4lym-BssaqseCJj_mkjoQqViPYaCMpnroZI';
+        
+        // 初始化Supabase
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // 获取DOM元素
+        const statusEl = document.getElementById('status');
+        const loadingEl = document.getElementById('loading');
+        const container = document.getElementById('danmu-container');
+        const input = document.getElementById('danmu-input');
+        const sendBtn = document.getElementById('send-btn');
+        const typeSelect = document.getElementById('danmu-type');
+
+        // 更新状态
+        function updateStatus(message, isError = false) {
+            statusEl.textContent = message;
+            statusEl.style.color = isError ? '#ff6b6b' : '#4CAF50';
+            console.log(message);
+        }
+
+        // 创建弹幕元素
+        function createDanmu(text, type) {
+            const danmu = document.createElement('div');
+            danmu.className = `danmu ${type}`;
+            danmu.textContent = text;
+            
+            // 随机垂直位置
+            const top = Math.random() * 80 + 5;
+            danmu.style.top = top + '%';
+            
+            container.appendChild(danmu);
+            
+            // 动画结束后移除元素
+            setTimeout(() => {
+                if (danmu.parentNode) {
+                    danmu.remove();
+                }
+            }, 15000);
+        }
+
+        // 加载历史弹幕
+        async function loadHistoryDanmus() {
+            try {
+                updateStatus('加载历史弹幕...');
+                
+                const { data, error } = await supabase
+                    .from('danmu')
+                    .select('*')
+                    .order('created_at', { ascending: true })
+                    .limit(50);
+
+                if (error) throw error;
+
+                // 移除加载提示
+                if (loadingEl) {
+                    loadingEl.remove();
+                }
+                
+                updateStatus(`已加载 ${data.length} 条弹幕`);
+                
+                // 显示历史弹幕
+                data.forEach((item, index) => {
+                    setTimeout(() => {
+                        createDanmu(item.text, item.type);
+                    }, index * 200);
+                });
+
+            } catch (error) {
+                updateStatus('加载失败: ' + error.message, true);
+            }
+        }
+
+        // 发送新弹幕
+        async function sendDanmu() {
+            const text = input.value.trim();
+            const type = typeSelect.value;
+            
+            if (!text) {
+                alert('请输入内容');
+                return;
+            }
+
+            try {
+                updateStatus('发送中...');
+                
+                // 立即显示弹幕（优化体验）
+                createDanmu(text, type);
+                
+                // 保存到数据库
+                const { error } = await supabase
+                    .from('danmu')
+                    .insert([{ text, type }]);
+
+                if (error) throw error;
+
+                updateStatus('发送成功！');
+                input.value = '';
+                input.focus();
+
+            } catch (error) {
+                updateStatus('发送失败: ' + error.message, true);
+            }
+        }
+
+        // 实时监听新弹幕
+        function setupRealtimeListener() {
+            updateStatus('开启实时监听');
+            
+            supabase
+                .channel('danmu-channel')
+                .on('postgres_changes', 
+                    { 
+                        event: 'INSERT', 
+                        schema: 'public', 
+                        table: 'danmu' 
+                    }, 
+                    (payload) => {
+                        // 避免重复显示自己刚发的弹幕
+                        if (payload.new.text !== input.value) {
+                            createDanmu(payload.new.text, payload.new.type);
+                            updateStatus('收到新弹幕！');
+                        }
+                    }
+                )
+                .subscribe();
+        }
+
+        // 初始化应用
+        async function initializeApp() {
+            updateStatus('系统启动中...');
+            
+            try {
+                // 测试连接
+                const { error } = await supabase.from('danmu').select('*').limit(1);
+                if (error) throw error;
+                
+                updateStatus('连接成功');
+                
+                // 加载历史数据
+                await loadHistoryDanmus();
+                
+                // 开启实时监听
+                setupRealtimeListener();
+                
+                updateStatus('系统就绪！');
+                
+            } catch (error) {
+                updateStatus('初始化失败: ' + error.message, true);
+            }
+        }
+
+        // 事件监听
+        sendBtn.addEventListener('click', sendDanmu);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendDanmu();
+            }
+        });
+
+        // 启动应用
+        initializeApp();
+    </script>
+</body>
+</html>
